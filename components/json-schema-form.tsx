@@ -9,6 +9,8 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Card, CardContent } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Plus, Trash2 } from "lucide-react"
 
 interface JsonSchemaFormProps {
   schema: any
@@ -17,11 +19,28 @@ interface JsonSchemaFormProps {
   onSubmit: (data: any) => void
 }
 
+interface DynamicField {
+  key: string
+  value: any
+  type: string
+}
+
 export function JsonSchemaForm({ schema, formData, onChange, onSubmit }: JsonSchemaFormProps) {
   const [localData, setLocalData] = useState<any>(formData || {})
+  const [dynamicFields, setDynamicFields] = useState<DynamicField[]>([])
 
   useEffect(() => {
     setLocalData(formData || {})
+
+    // Initialize dynamic fields from existing form data
+    if (formData && Object.keys(formData).length > 0) {
+      const fields = Object.entries(formData).map(([key, value]) => ({
+        key,
+        value,
+        type: typeof value === "number" ? "number" : typeof value === "boolean" ? "boolean" : "string",
+      }))
+      setDynamicFields(fields)
+    }
   }, [formData])
 
   const handleChange = (key: string, value: any) => {
@@ -33,6 +52,47 @@ export function JsonSchemaForm({ schema, formData, onChange, onSubmit }: JsonSch
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     onSubmit(localData)
+  }
+
+  const addDynamicField = () => {
+    const newField: DynamicField = {
+      key: `field_${dynamicFields.length + 1}`,
+      value: "",
+      type: "string",
+    }
+    setDynamicFields([...dynamicFields, newField])
+  }
+
+  const removeDynamicField = (index: number) => {
+    const newFields = dynamicFields.filter((_, i) => i !== index)
+    setDynamicFields(newFields)
+
+    // Remove from form data
+    const fieldToRemove = dynamicFields[index]
+    const newData = { ...localData }
+    delete newData[fieldToRemove.key]
+    setLocalData(newData)
+    onChange(newData)
+  }
+
+  const updateDynamicField = (index: number, updates: Partial<DynamicField>) => {
+    const newFields = [...dynamicFields]
+    const oldKey = newFields[index].key
+    newFields[index] = { ...newFields[index], ...updates }
+    setDynamicFields(newFields)
+
+    // Update form data
+    const newData = { ...localData }
+    if (updates.key && updates.key !== oldKey) {
+      // Key changed, remove old and add new
+      delete newData[oldKey]
+      newData[updates.key] = updates.value !== undefined ? updates.value : newFields[index].value
+    } else if (updates.value !== undefined) {
+      // Value changed
+      newData[newFields[index].key] = updates.value
+    }
+    setLocalData(newData)
+    onChange(newData)
   }
 
   const renderField = (key: string, property: any, required = false) => {
@@ -201,19 +261,110 @@ export function JsonSchemaForm({ schema, formData, onChange, onSubmit }: JsonSch
     }
   }
 
-  if (!schema || !schema.properties) {
+  const renderDynamicField = (field: DynamicField, index: number) => {
     return (
-      <div className="text-center py-8 text-muted-foreground">
-        <p>No form schema available for this endpoint</p>
-      </div>
+      <Card key={index} className="p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <Input
+            placeholder="Field name"
+            value={field.key}
+            onChange={(e) => updateDynamicField(index, { key: e.target.value })}
+            className="flex-1"
+          />
+          <Select value={field.type} onValueChange={(type) => updateDynamicField(index, { type })}>
+            <SelectTrigger className="w-32">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="string">Text</SelectItem>
+              <SelectItem value="number">Number</SelectItem>
+              <SelectItem value="boolean">Boolean</SelectItem>
+              <SelectItem value="email">Email</SelectItem>
+              <SelectItem value="date">Date</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button type="button" variant="outline" size="sm" onClick={() => removeDynamicField(index)}>
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
+
+        <div className="space-y-2">
+          {field.type === "boolean" ? (
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                checked={!!field.value}
+                onCheckedChange={(checked) => updateDynamicField(index, { value: checked })}
+              />
+              <Label>{field.key || "Boolean field"}</Label>
+            </div>
+          ) : (
+            <Input
+              type={
+                field.type === "number"
+                  ? "number"
+                  : field.type === "email"
+                    ? "email"
+                    : field.type === "date"
+                      ? "date"
+                      : "text"
+              }
+              placeholder={`Enter ${field.key || "value"}`}
+              value={field.value || ""}
+              onChange={(e) => {
+                const value = field.type === "number" ? Number(e.target.value) : e.target.value
+                updateDynamicField(index, { value })
+              }}
+            />
+          )}
+        </div>
+      </Card>
     )
   }
 
+  const hasSchemaFields = schema && schema.properties && Object.keys(schema.properties).length > 0
+
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      {Object.entries(schema.properties).map(([key, property]: [string, any]) =>
-        renderField(key, property, schema.required?.includes(key)),
+      {/* Render schema-defined fields */}
+      {hasSchemaFields && (
+        <div className="space-y-4">
+          <div className="border-b pb-2">
+            <h3 className="font-semibold text-sm text-muted-foreground">Schema Fields</h3>
+          </div>
+          {Object.entries(schema.properties).map(([key, property]: [string, any]) =>
+            renderField(key, property, schema.required?.includes(key)),
+          )}
+        </div>
       )}
+
+      {/* Dynamic fields section */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between border-b pb-2">
+          <h3 className="font-semibold text-sm text-muted-foreground">
+            {hasSchemaFields ? "Additional Fields" : "Custom Fields"}
+          </h3>
+          <Button type="button" variant="outline" size="sm" onClick={addDynamicField}>
+            <Plus className="h-4 w-4 mr-1" />
+            Add Field
+          </Button>
+        </div>
+
+        {dynamicFields.length === 0 && !hasSchemaFields && (
+          <div className="text-center py-6 text-muted-foreground">
+            <p>No fields defined yet</p>
+            <p className="text-sm">Click "Add Field" to create custom form fields</p>
+          </div>
+        )}
+
+        {dynamicFields.map((field, index) => renderDynamicField(field, index))}
+      </div>
+
+      {/* Submit button */}
+      <div className="pt-4 border-t">
+        <Button type="submit" className="w-full">
+          Submit Form
+        </Button>
+      </div>
     </form>
   )
 }

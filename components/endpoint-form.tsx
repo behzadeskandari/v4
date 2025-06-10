@@ -5,10 +5,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
-import { Send, Code, Eye } from "lucide-react"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Send, Code, Eye, FileText } from "lucide-react"
 import { JsonSchemaForm } from "./json-schema-form"
 import { ResponseViewer } from "./response-viewer"
 import { RequestOverrideModal } from "./request-override-modal"
+import { JsonTestingPanel } from "./json-testing-panel"
 import type { OpenAPIEndpoint, ApiResponse } from "@/types/openapi"
 
 interface EndpointFormProps {
@@ -18,14 +20,35 @@ interface EndpointFormProps {
 
 export function EndpointForm({ endpoint, baseUrl }: EndpointFormProps) {
   const [formData, setFormData] = useState<any>({})
+  const [jsonData, setJsonData] = useState<string>("")
   const [response, setResponse] = useState<ApiResponse | null>(null)
   const [loading, setLoading] = useState(false)
+  const [activeTab, setActiveTab] = useState<"form" | "json">("form")
+
+  const hasRequestPayload = endpoint.schema !== null
+
+  const hasFormFields = endpoint.schema?.properties && Object.keys(endpoint.schema.properties).length > 0
 
   const handleFormChange = (data: any) => {
     setFormData(data)
+    // Sync JSON when form changes
+    setJsonData(JSON.stringify(data, null, 2))
   }
 
-  const handleSubmit = async (data: any) => {
+  const handleJsonChange = (json: string) => {
+    setJsonData(json)
+    // Try to sync form when JSON changes
+    try {
+      const parsed = JSON.parse(json)
+      setFormData(parsed)
+    } catch {
+      // Invalid JSON, keep form as is
+    }
+  }
+
+  const handleSubmit = async (data?: any) => {
+    const requestData = data || (activeTab === "json" ? (jsonData ? JSON.parse(jsonData) : {}) : formData)
+
     setLoading(true)
     setResponse(null)
 
@@ -40,14 +63,14 @@ export function EndpointForm({ endpoint, baseUrl }: EndpointFormProps) {
       }
 
       // Add body for methods that support it
-      if (["POST", "PUT", "PATCH"].includes(endpoint.method) && data) {
-        options.body = JSON.stringify(data)
+      if (["POST", "PUT", "PATCH"].includes(endpoint.method) && requestData) {
+        options.body = JSON.stringify(requestData)
       }
 
       // Add query parameters for GET requests
-      if (endpoint.method === "GET" && data && Object.keys(data).length > 0) {
+      if (endpoint.method === "GET" && requestData && Object.keys(requestData).length > 0) {
         const params = new URLSearchParams()
-        Object.entries(data).forEach(([key, value]) => {
+        Object.entries(requestData).forEach(([key, value]) => {
           if (value !== undefined && value !== null && value !== "") {
             params.append(key, String(value))
           }
@@ -55,10 +78,8 @@ export function EndpointForm({ endpoint, baseUrl }: EndpointFormProps) {
         const queryString = params.toString()
         if (queryString) {
           const separator = url.includes("?") ? "&" : "?"
-          options.method = "GET"
-          // For GET requests, we need to modify the URL
           const finalUrl = `${url}${separator}${queryString}`
-          const response = await fetch(finalUrl, options)
+          const response = await fetch(finalUrl, { ...options, method: "GET" })
           await handleResponse(response)
           return
         }
@@ -108,7 +129,7 @@ export function EndpointForm({ endpoint, baseUrl }: EndpointFormProps) {
       PATCH: "bg-orange-500",
       DELETE: "bg-red-500",
     }
-    return colors[method] || "bg-gray-500"
+    return colors[method as keyof typeof colors] || "bg-gray-500"
   }
 
   return (
@@ -120,47 +141,95 @@ export function EndpointForm({ endpoint, baseUrl }: EndpointFormProps) {
             <CardTitle className="font-mono text-lg">{endpoint.path}</CardTitle>
           </div>
           {endpoint.summary && <p className="text-muted-foreground">{endpoint.summary}</p>}
+          {endpoint.description && <p className="text-sm text-muted-foreground mt-2">{endpoint.description}</p>}
         </CardHeader>
       </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Code className="h-5 w-5" />
-                Request
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {endpoint.schema && (
-                <JsonSchemaForm
-                  schema={endpoint.schema}
-                  formData={formData}
-                  onChange={handleFormChange}
-                  onSubmit={handleSubmit}
-                />
-              )}
+          {hasRequestPayload ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="h-5 w-5" />
+                  Request Configuration
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "form" | "json")}>
+                  <TabsList className="grid w-full grid-cols-2">
+                    <TabsTrigger value="form" className="flex items-center gap-2">
+                      <FileText className="h-4 w-4" />
+                      Form {!hasFormFields && "(Empty)"}
+                    </TabsTrigger>
+                    <TabsTrigger value="json" className="flex items-center gap-2">
+                      <Code className="h-4 w-4" />
+                      JSON
+                    </TabsTrigger>
+                  </TabsList>
 
-              <div className="flex gap-2">
-                <Button onClick={() => handleSubmit(formData)} disabled={loading} className="flex-1">
+                  <TabsContent value="form" className="space-y-4 mt-4">
+                    <JsonSchemaForm
+                      schema={endpoint.schema}
+                      formData={formData}
+                      onChange={handleFormChange}
+                      onSubmit={handleSubmit}
+                    />
+                  </TabsContent>
+
+                  <TabsContent value="json" className="space-y-4 mt-4">
+                    <JsonTestingPanel
+                      value={jsonData}
+                      onChange={handleJsonChange}
+                      schema={endpoint.schema}
+                      onSubmit={() => handleSubmit()}
+                    />
+                  </TabsContent>
+                </Tabs>
+
+                <div className="flex gap-2 mt-4">
+                  <Button onClick={() => handleSubmit()} disabled={loading} className="flex-1">
+                    <Send className="h-4 w-4 mr-2" />
+                    {loading ? "Sending..." : `Send ${endpoint.method} Request`}
+                  </Button>
+                  <RequestOverrideModal
+                    currentValue={activeTab === "json" ? (jsonData ? JSON.parse(jsonData || "{}") : {}) : formData}
+                    onSave={(data) => {
+                      setFormData(data)
+                      setJsonData(JSON.stringify(data, null, 2))
+                    }}
+                  />
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Send className="h-5 w-5" />
+                  Send Request
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-muted-foreground mb-4">This endpoint doesn't require a request payload.</p>
+                <Button onClick={() => handleSubmit({})} disabled={loading} className="w-full">
                   <Send className="h-4 w-4 mr-2" />
                   {loading ? "Sending..." : `Send ${endpoint.method} Request`}
                 </Button>
-                <RequestOverrideModal currentValue={formData} onSave={setFormData} />
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          )}
 
           <Card>
             <CardHeader>
-              <CardTitle>Request Payload</CardTitle>
+              <CardTitle>Current Request Payload</CardTitle>
             </CardHeader>
             <CardContent>
               <Textarea
-                value={JSON.stringify(formData, null, 2)}
+                value={activeTab === "json" ? jsonData : JSON.stringify(formData, null, 2)}
                 readOnly
                 className="font-mono text-sm min-h-[200px]"
+                placeholder="No request data"
               />
             </CardContent>
           </Card>

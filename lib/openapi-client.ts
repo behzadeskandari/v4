@@ -48,49 +48,92 @@ export class OpenAPIClient {
   }
 
   private extractSchema(operation: any, method: HttpMethod): any {
+    // Always return a schema object, never null
+    const baseSchema = {
+      type: "object",
+      properties: {},
+      title: `${method} Request`,
+      description: `Request configuration for ${method} operation`,
+    }
+
     // For request body (POST, PUT, PATCH)
     if (["POST", "PUT", "PATCH"].includes(method)) {
       const requestBody = operation.requestBody
       if (requestBody?.content?.["application/json"]?.schema) {
-        return requestBody.content["application/json"].schema
+        return {
+          ...requestBody.content["application/json"].schema,
+          title: `${method} Request Body`,
+          description: requestBody.description || `Request body for ${method} ${operation.summary || "operation"}`,
+        }
+      }
+      return {
+        ...baseSchema,
+        title: `${method} Request Body`,
+        description: `Request body for ${method} operation`,
       }
     }
 
-    // For query parameters (GET, DELETE)
-    if (["GET", "DELETE"].includes(method)) {
-      const parameters = operation.parameters || []
-      if (parameters.length > 0) {
-        const properties: any = {}
-        const required: string[] = []
+    // For query parameters and path parameters (GET, DELETE, and others)
+    const parameters = operation.parameters || []
+    if (parameters.length > 0) {
+      const properties: any = {}
+      const required: string[] = []
 
-        parameters.forEach((param: any) => {
-          if (param.in === "query") {
-            properties[param.name] = {
-              type: param.schema?.type || "string",
-              description: param.description,
-              ...param.schema,
-            }
-            if (param.required) {
-              required.push(param.name)
-            }
+      parameters.forEach((param: any) => {
+        if (param.in === "query" || param.in === "path") {
+          properties[param.name] = {
+            type: param.schema?.type || "string",
+            description: param.description,
+            title: param.name,
+            ...param.schema,
           }
-        })
+          if (param.required) {
+            required.push(param.name)
+          }
+        }
+      })
 
-        if (Object.keys(properties).length > 0) {
-          return {
-            type: "object",
-            properties,
-            required: required.length > 0 ? required : undefined,
-          }
+      if (Object.keys(properties).length > 0) {
+        return {
+          type: "object",
+          properties,
+          required: required.length > 0 ? required : undefined,
+          title: `${method} Parameters`,
+          description: `Parameters for ${method} ${operation.summary || "operation"}`,
         }
       }
     }
 
-    // Default empty schema
-    return {
-      type: "object",
-      properties: {},
-      title: `${method} ${operation.summary || "Request"}`,
+    // For GET requests, add common query parameters
+    if (method === "GET") {
+      return {
+        type: "object",
+        properties: {
+          limit: {
+            type: "integer",
+            title: "Limit",
+            description: "Number of items to return",
+            minimum: 1,
+            maximum: 1000,
+          },
+          offset: {
+            type: "integer",
+            title: "Offset",
+            description: "Number of items to skip",
+            minimum: 0,
+          },
+          search: {
+            type: "string",
+            title: "Search",
+            description: "Search query",
+          },
+        },
+        title: `${method} Query Parameters`,
+        description: `Query parameters for ${method} requests`,
+      }
     }
+
+    // Return base schema for all other cases
+    return baseSchema
   }
 }
