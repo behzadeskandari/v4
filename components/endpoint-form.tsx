@@ -6,11 +6,13 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Send, Code, Eye, FileText } from "lucide-react"
+import { Send, Code, Eye, FileText, Shield } from "lucide-react"
 import { JsonSchemaForm } from "./json-schema-form"
 import { ResponseViewer } from "./response-viewer"
 import { RequestOverrideModal } from "./request-override-modal"
 import { JsonTestingPanel } from "./json-testing-panel"
+// Update the import path below to the correct relative path if needed
+import { useAuth } from "@/contexts/auth-context"
 import type { OpenAPIEndpoint, ApiResponse } from "@/types/openapi"
 
 interface EndpointFormProps {
@@ -25,9 +27,12 @@ export function EndpointForm({ endpoint, baseUrl }: EndpointFormProps) {
   const [loading, setLoading] = useState(false)
   const [activeTab, setActiveTab] = useState<"form" | "json">("form")
 
-  const hasRequestPayload = endpoint.schema !== null
+  const { authConfig, getAuthHeaders, getAuthQuery } = useAuth()
 
-  const hasFormFields = endpoint.schema?.properties && Object.keys(endpoint.schema.properties).length > 0
+  const hasRequestPayload =
+    endpoint.schema !== null &&
+    ((endpoint.schema?.properties && Object.keys(endpoint.schema.properties).length > 0) ||
+      ["POST", "PUT", "PATCH"].includes(endpoint.method))
 
   const handleFormChange = (data: any) => {
     setFormData(data)
@@ -54,11 +59,17 @@ export function EndpointForm({ endpoint, baseUrl }: EndpointFormProps) {
 
     try {
       const url = `${baseUrl}${endpoint.path}`
+
+      // Get auth headers and query parameters
+      const authHeaders = getAuthHeaders()
+      const authQuery = getAuthQuery()
+
       const options: RequestInit = {
         method: endpoint.method,
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json",
+          ...authHeaders, // Add authentication headers
         },
       }
 
@@ -67,14 +78,24 @@ export function EndpointForm({ endpoint, baseUrl }: EndpointFormProps) {
         options.body = JSON.stringify(requestData)
       }
 
-      // Add query parameters for GET requests
-      if (endpoint.method === "GET" && requestData && Object.keys(requestData).length > 0) {
+      // Add query parameters for GET requests (including auth query params)
+      if (endpoint.method === "GET" && (requestData || Object.keys(authQuery).length > 0)) {
         const params = new URLSearchParams()
-        Object.entries(requestData).forEach(([key, value]) => {
-          if (value !== undefined && value !== null && value !== "") {
-            params.append(key, String(value))
-          }
+
+        // Add auth query parameters
+        Object.entries(authQuery).forEach(([key, value]) => {
+          params.append(key, value)
         })
+
+        // Add request data as query parameters
+        if (requestData && Object.keys(requestData).length > 0) {
+          Object.entries(requestData).forEach(([key, value]) => {
+            if (value !== undefined && value !== null && value !== "") {
+              params.append(key, String(value))
+            }
+          })
+        }
+
         const queryString = params.toString()
         if (queryString) {
           const separator = url.includes("?") ? "&" : "?"
@@ -85,8 +106,17 @@ export function EndpointForm({ endpoint, baseUrl }: EndpointFormProps) {
         }
       }
 
-      const response = await fetch(url, options)
-      await handleResponse(response)
+      // For other methods, add auth query params to URL if needed
+      if (Object.keys(authQuery).length > 0) {
+        const params = new URLSearchParams(authQuery)
+        const separator = url.includes("?") ? "&" : "?"
+        const finalUrl = `${url}${separator}${params.toString()}`
+        const response = await fetch(finalUrl, options)
+        await handleResponse(response)
+      } else {
+        const response = await fetch(url, options)
+        await handleResponse(response)
+      }
     } catch (error) {
       setResponse({
         status: 0,
@@ -136,9 +166,17 @@ export function EndpointForm({ endpoint, baseUrl }: EndpointFormProps) {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <div className="flex items-center gap-3">
-            <Badge className={`${getMethodColor(endpoint.method)} text-white`}>{endpoint.method}</Badge>
-            <CardTitle className="font-mono text-lg">{endpoint.path}</CardTitle>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Badge className={`${getMethodColor(endpoint.method)} text-white`}>{endpoint.method}</Badge>
+              <CardTitle className="font-mono text-lg">{endpoint.path}</CardTitle>
+            </div>
+            {authConfig.type !== "none" && (
+              <Badge variant="outline" className="flex items-center gap-1">
+                <Shield className="h-3 w-3" />
+                Auth: {authConfig.type}
+              </Badge>
+            )}
           </div>
           {endpoint.summary && <p className="text-muted-foreground">{endpoint.summary}</p>}
           {endpoint.description && <p className="text-sm text-muted-foreground mt-2">{endpoint.description}</p>}
@@ -160,7 +198,7 @@ export function EndpointForm({ endpoint, baseUrl }: EndpointFormProps) {
                   <TabsList className="grid w-full grid-cols-2">
                     <TabsTrigger value="form" className="flex items-center gap-2">
                       <FileText className="h-4 w-4" />
-                      Form {!hasFormFields && "(Empty)"}
+                      Form
                     </TabsTrigger>
                     <TabsTrigger value="json" className="flex items-center gap-2">
                       <Code className="h-4 w-4" />
@@ -169,12 +207,14 @@ export function EndpointForm({ endpoint, baseUrl }: EndpointFormProps) {
                   </TabsList>
 
                   <TabsContent value="form" className="space-y-4 mt-4">
-                    <JsonSchemaForm
-                      schema={endpoint.schema}
-                      formData={formData}
-                      onChange={handleFormChange}
-                      onSubmit={handleSubmit}
-                    />
+                    {endpoint.schema && (
+                      <JsonSchemaForm
+                        schema={endpoint.schema}
+                        formData={formData}
+                        onChange={handleFormChange}
+                        onSubmit={handleSubmit}
+                      />
+                    )}
                   </TabsContent>
 
                   <TabsContent value="json" className="space-y-4 mt-4">

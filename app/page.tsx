@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { OpenAPIExplorer } from "@/components/openapi-explorer"
+import { AuthConfig } from "@/components/auth-config"
 
 export default function HomePage() {
   const [openapiUrl, setOpenapiUrl] = useState("http://localhost:5029/swagger/v1/swagger.json")
@@ -28,25 +29,29 @@ export default function HomePage() {
         <p className="text-muted-foreground">Generate interactive forms from your OpenAPI specifications</p>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>OpenAPI Configuration</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="openapi-url">OpenAPI Specification URL</Label>
-            <Input
-              id="openapi-url"
-              type="url"
-              value={openapiUrl}
-              onChange={(e) => handleUrlChange(e.target.value)}
-              placeholder="Enter your OpenAPI/Swagger JSON URL"
-              className={!isValidUrl ? "border-red-500" : ""}
-            />
-            {!isValidUrl && <p className="text-sm text-red-500">Please enter a valid URL</p>}
-          </div>
-        </CardContent>
-      </Card>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>OpenAPI Configuration</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="openapi-url">OpenAPI Specification URL</Label>
+              <Input
+                id="openapi-url"
+                type="url"
+                value={openapiUrl}
+                onChange={(e) => handleUrlChange(e.target.value)}
+                placeholder="Enter your OpenAPI/Swagger JSON URL"
+                className={!isValidUrl ? "border-red-500" : ""}
+              />
+              {!isValidUrl && <p className="text-sm text-red-500">Please enter a valid URL</p>}
+            </div>
+          </CardContent>
+        </Card>
+
+        <AuthConfig />
+      </div>
 
       {isValidUrl && openapiUrl && <OpenAPIExplorer openapiUrl={openapiUrl} />}
     </div>
