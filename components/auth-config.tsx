@@ -1,4 +1,4 @@
-"\"use client"
+"use client"
 
 import { useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -9,14 +9,34 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Shield, Key, User, X, Eye, EyeOff } from "lucide-react"
+import { Shield, Key, User, X, Eye, EyeOff, Loader2 } from "lucide-react"
 import { useAuth, type AuthConfig } from "@/contexts/auth-context"
 
 export function AuthConfig() {
-  const { authConfig, setAuthConfig, clearAuth } = useAuth()
+  const { authConfig, setAuthConfig, clearAuth, isLoaded } = useAuth()
   const [isOpen, setIsOpen] = useState(false)
   const [showToken, setShowToken] = useState(false)
   const [tempConfig, setTempConfig] = useState<AuthConfig>(authConfig)
+
+  // Don't render until auth context is loaded to prevent hydration mismatch
+  if (!isLoaded) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Shield className="h-5 w-5" />
+            Authentication
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-center py-4">
+            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+            Loading authentication settings...
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
 
   const handleSave = () => {
     setAuthConfig(tempConfig)
@@ -26,6 +46,11 @@ export function AuthConfig() {
   const handleCancel = () => {
     setTempConfig(authConfig)
     setIsOpen(false)
+  }
+
+  const handleOpenDialog = () => {
+    setTempConfig(authConfig)
+    setIsOpen(true)
   }
 
   const getAuthStatusBadge = () => {
@@ -73,7 +98,7 @@ export function AuthConfig() {
             {getAuthStatusBadge()}
             <Dialog open={isOpen} onOpenChange={setIsOpen}>
               <DialogTrigger asChild>
-                <Button variant="outline" size="sm">
+                <Button variant="outline" size="sm" onClick={handleOpenDialog}>
                   Configure
                 </Button>
               </DialogTrigger>

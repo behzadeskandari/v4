@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -11,7 +11,6 @@ import { JsonSchemaForm } from "./json-schema-form"
 import { ResponseViewer } from "./response-viewer"
 import { RequestOverrideModal } from "./request-override-modal"
 import { JsonTestingPanel } from "./json-testing-panel"
-// Update the import path below to the correct relative path if needed
 import { useAuth } from "@/contexts/auth-context"
 import type { OpenAPIEndpoint, ApiResponse } from "@/types/openapi"
 
@@ -26,8 +25,14 @@ export function EndpointForm({ endpoint, baseUrl }: EndpointFormProps) {
   const [response, setResponse] = useState<ApiResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [activeTab, setActiveTab] = useState<"form" | "json">("form")
+  const [isMounted, setIsMounted] = useState(false)
 
   const { authConfig, getAuthHeaders, getAuthQuery } = useAuth()
+
+  // Ensure component is mounted before rendering to prevent hydration issues
+  useEffect(() => {
+    setIsMounted(true)
+  }, [])
 
   const hasRequestPayload =
     endpoint.schema !== null &&
@@ -52,7 +57,19 @@ export function EndpointForm({ endpoint, baseUrl }: EndpointFormProps) {
   }
 
   const handleSubmit = async (data?: any) => {
-    const requestData = data || (activeTab === "json" ? (jsonData ? JSON.parse(jsonData) : {}) : formData)
+    let requestData = data
+
+    if (!requestData) {
+      if (activeTab === "json") {
+        try {
+          requestData = jsonData ? JSON.parse(jsonData) : {}
+        } catch {
+          requestData = {}
+        }
+      } else {
+        requestData = formData || {}
+      }
+    }
 
     setLoading(true)
     setResponse(null)
@@ -162,6 +179,42 @@ export function EndpointForm({ endpoint, baseUrl }: EndpointFormProps) {
     return colors[method as keyof typeof colors] || "bg-gray-500"
   }
 
+
+  // Safe JSON parsing function
+  const safeJsonParse = (jsonString: string): any => {
+    if (!jsonString || jsonString.trim() === "") {
+      return {}
+    }
+    try {
+      return JSON.parse(jsonString)
+    } catch {
+      return {}
+    }
+  }
+
+  // Get current value for RequestOverrideModal safely
+  const getCurrentValue = () => {
+    if (activeTab === "json") {
+      return safeJsonParse(jsonData)
+    }
+    return formData || {}
+  }
+
+  // Don't render until mounted to prevent hydration mismatch
+  if (!isMounted) {
+    return (
+      <div className="space-y-6">
+        <div className="animate-pulse">
+          <div className="h-20 bg-gray-200 rounded mb-6"></div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="h-96 bg-gray-200 rounded"></div>
+            <div className="h-96 bg-gray-200 rounded"></div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
       <Card>
@@ -233,7 +286,7 @@ export function EndpointForm({ endpoint, baseUrl }: EndpointFormProps) {
                     {loading ? "Sending..." : `Send ${endpoint.method} Request`}
                   </Button>
                   <RequestOverrideModal
-                    currentValue={activeTab === "json" ? (jsonData ? JSON.parse(jsonData || "{}") : {}) : formData}
+                    currentValue={getCurrentValue()}
                     onSave={(data) => {
                       setFormData(data)
                       setJsonData(JSON.stringify(data, null, 2))

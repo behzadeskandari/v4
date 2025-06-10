@@ -22,30 +22,52 @@ interface AuthContextType {
   getAuthHeaders: () => Record<string, string>
   getAuthQuery: () => Record<string, string>
   clearAuth: () => void
+  isLoaded: boolean
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [authConfig, setAuthConfigState] = useState<AuthConfig>({ type: "none" })
+  const [isLoaded, setIsLoaded] = useState(false)
 
-  // Load auth config from localStorage on mount
+  // Load auth config from localStorage on mount (client-side only)
   useEffect(() => {
-    const saved = localStorage.getItem("openapi-auth-config")
-    if (saved) {
+    const loadAuthConfig = () => {
       try {
-        const parsed = JSON.parse(saved)
-        setAuthConfigState(parsed)
-      } catch {
-        // Invalid saved config, ignore
+        const saved = localStorage.getItem("openapi-auth-config")
+        if (saved) {
+          const parsed = JSON.parse(saved)
+          setAuthConfigState(parsed)
+        }
+      } catch (error) {
+        console.warn("Failed to load auth config from localStorage:", error)
+        // Reset to default if corrupted
+        setAuthConfigState({ type: "none" })
+      } finally {
+        setIsLoaded(true)
       }
+    }
+
+    // Only run on client side
+    if (typeof window !== "undefined") {
+      loadAuthConfig()
+    } else {
+      setIsLoaded(true)
     }
   }, [])
 
-  // Save auth config to localStorage when it changes
+  // Save auth config to localStorage when it changes (client-side only)
   const setAuthConfig = (config: AuthConfig) => {
     setAuthConfigState(config)
-    localStorage.setItem("openapi-auth-config", JSON.stringify(config))
+
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("openapi-auth-config", JSON.stringify(config))
+      } catch (error) {
+        console.warn("Failed to save auth config to localStorage:", error)
+      }
+    }
   }
 
   const getAuthHeaders = (): Record<string, string> => {
@@ -95,6 +117,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         getAuthHeaders,
         getAuthQuery,
         clearAuth,
+        isLoaded,
       }}
     >
       {children}

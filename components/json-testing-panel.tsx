@@ -17,23 +17,52 @@ interface JsonTestingPanelProps {
   onSubmit: () => void
 }
 
+interface JsonValidationResult {
+  isValid: boolean
+  error?: string
+  parsedValue?: any
+  characterCount?: number
+}
+
 export function JsonTestingPanel({ value, onChange, schema, onSubmit }: JsonTestingPanelProps) {
-  const [jsonError, setJsonError] = useState<string>("")
   const [selectedTemplate, setSelectedTemplate] = useState<string>("")
+  const [isMounted, setIsMounted] = useState(false)
+  const [validationResult, setValidationResult] = useState<JsonValidationResult>({ isValid: true })
+
+  // Ensure component is mounted before rendering to prevent hydration issues
+  useEffect(() => {
+    setIsMounted(true)
+  }, [])
+
+  // Safe JSON validation function
+  const validateJson = (jsonString: string): JsonValidationResult => {
+    if (!jsonString || jsonString.trim() === "") {
+      return { isValid: true, characterCount: 0 }
+    }
+
+    try {
+      const parsed = JSON.parse(jsonString)
+      const stringified = JSON.stringify(parsed)
+      return {
+        isValid: true,
+        parsedValue: parsed,
+        characterCount: stringified.length,
+      }
+    } catch (error) {
+      return {
+        isValid: false,
+        error: error instanceof Error ? error.message : "Invalid JSON",
+      }
+    }
+  }
 
   // Validate JSON on change
   useEffect(() => {
-    if (value.trim()) {
-      try {
-        JSON.parse(value)
-        setJsonError("")
-      } catch (error) {
-        setJsonError(error instanceof Error ? error.message : "Invalid JSON")
-      }
-    } else {
-      setJsonError("")
-    }
-  }, [value])
+    if (!isMounted) return
+
+    const result = validateJson(value)
+    setValidationResult(result)
+  }, [value, isMounted])
 
   const generateTemplates = () => {
     if (!schema || !schema.properties) return []
@@ -140,16 +169,43 @@ export function JsonTestingPanel({ value, onChange, schema, onSubmit }: JsonTest
   }
 
   const formatJson = () => {
-    try {
-      const parsed = JSON.parse(value)
-      onChange(JSON.stringify(parsed, null, 2))
-    } catch {
-      // Invalid JSON, can't format
+    if (validationResult.isValid && validationResult.parsedValue !== undefined) {
+      const formatted = JSON.stringify(validationResult.parsedValue, null, 2)
+      onChange(formatted)
     }
   }
 
-  const copyToClipboard = () => {
-    navigator.clipboard.writeText(value)
+  const copyToClipboard = async () => {
+    if (typeof window !== "undefined" && navigator.clipboard && value) {
+      try {
+        await navigator.clipboard.writeText(value)
+      } catch (error) {
+        console.warn("Failed to copy to clipboard:", error)
+        // Fallback for older browsers
+        try {
+          const textArea = document.createElement("textarea")
+          textArea.value = value
+          document.body.appendChild(textArea)
+          textArea.select()
+          document.execCommand("copy")
+          document.body.removeChild(textArea)
+        } catch (fallbackError) {
+          console.warn("Fallback copy also failed:", fallbackError)
+        }
+      }
+    }
+  }
+
+  // Don't render until mounted to prevent hydration mismatch
+  if (!isMounted) {
+    return (
+      <div className="space-y-4">
+        <div className="animate-pulse">
+          <div className="h-4 bg-gray-200 rounded w-1/4 mb-2"></div>
+          <div className="h-32 bg-gray-200 rounded"></div>
+        </div>
+      </div>
+    )
   }
 
   const templates = generateTemplates()
@@ -166,7 +222,7 @@ export function JsonTestingPanel({ value, onChange, schema, onSubmit }: JsonTest
           <div className="flex items-center justify-between">
             <Label htmlFor="json-input">JSON Request Body</Label>
             <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={formatJson} disabled={!!jsonError}>
+              <Button variant="outline" size="sm" onClick={formatJson} disabled={!validationResult.isValid}>
                 <Zap className="h-4 w-4 mr-1" />
                 Format
               </Button>
@@ -186,17 +242,17 @@ export function JsonTestingPanel({ value, onChange, schema, onSubmit }: JsonTest
               placeholder="Enter JSON request body..."
             />
 
-            {jsonError && (
+            {!validationResult.isValid && validationResult.error && (
               <Alert variant="destructive">
                 <AlertCircle className="h-4 w-4" />
-                <AlertDescription>JSON Error: {jsonError}</AlertDescription>
+                <AlertDescription>JSON Error: {validationResult.error}</AlertDescription>
               </Alert>
             )}
 
-            {!jsonError && value.trim() && (
+            {validationResult.isValid && value.trim() && validationResult.characterCount !== undefined && (
               <Alert>
                 <CheckCircle className="h-4 w-4" />
-                <AlertDescription>Valid JSON ({JSON.stringify(JSON.parse(value)).length} characters)</AlertDescription>
+                <AlertDescription>Valid JSON ({validationResult.characterCount} characters)</AlertDescription>
               </Alert>
             )}
           </div>
@@ -250,7 +306,7 @@ export function JsonTestingPanel({ value, onChange, schema, onSubmit }: JsonTest
       </Tabs>
 
       <div className="flex gap-2">
-        <Button onClick={onSubmit} disabled={!!jsonError || !value.trim()} className="flex-1">
+        <Button onClick={onSubmit} disabled={!validationResult.isValid || !value.trim()} className="flex-1">
           Test with JSON
         </Button>
       </div>
