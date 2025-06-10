@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { OpenAPIExplorer } from "@/components/openapi-explorer"
 import { AuthConfig } from "@/components/auth-config"
+import { Navigation } from "@/components/navigation"
 
 export default function HomePage() {
   const [openapiUrl, setOpenapiUrl] = useState("http://localhost:5029/swagger/v1/swagger.json")
@@ -52,6 +53,8 @@ export default function HomePage() {
         <h1 className="text-3xl font-bold">OpenAPI Forms Generator</h1>
         <p className="text-muted-foreground">Generate interactive forms from your OpenAPI specifications</p>
       </div>
+
+      <Navigation />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
